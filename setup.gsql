@@ -5,8 +5,8 @@ CREATE SCHEMA_CHANGE JOB create_ddl_recipe FOR GRAPH RecipeNLG {
     ADD vertex howto(PRIMARY_ID instruction STRING) WITH primary_id_as_attribute="true";
     ADD VERTEX food(PRIMARY_ID item STRING) WITH primary_id_as_attribute="true";
 
-    ADD DIRECTED EDGE recipe_food(FROM recipe, TO food) with REVERSE_EDGE food_recipe;
-    ADD directed EDGE preparation(FROM recipe, TO howto, step UINT);
+    ADD DIRECTED EDGE recipe_food(FROM recipe, TO food) with REVERSE_EDGE="food_recipe";
+    ADD directed EDGE preparation(FROM recipe, TO howto, step UINT) with REVERSE_EDGE="rev_preparation";
 }
 RUN SCHEMA_CHANGE JOB create_ddl_recipe
 DROP JOB create_ddl_recipe
