@@ -2,13 +2,13 @@ CREATE GRAPH RecipeNLG()
 
 CREATE SCHEMA_CHANGE JOB create_ddl_recipe FOR GRAPH RecipeNLG {
     ADD VERTEX recipes(PRIMARY_ID id INT, title STRING, link STRING, source STRING) WITH primary_id_as_attribute="true";
-    ADD VERTEX directions(PRIMARY_ID instruction STRING) WITH primary_id_as_attribute="true";
+    ADD vertex directions(PRIMARY_ID instruction STRING) WITH primary_id_as_attribute="true";
     ADD VERTEX ingredients(PRIMARY_ID ingredient STRING ) WITH primary_id_as_attribute="true";
-    ADD VERTEX keywords(PRIMARY_ID item STRING) WITH primary_id_as_attribute="true";
+    ADD VERTEX keywords(PRIMARY_ID keyword STRING) WITH primary_id_as_attribute="true";
 
-    ADD UNDIRECTED EDGE recipe_keyword(FROM recipe, TO keywords);
-    ADD DIRECTED EDGE recipe_ingredient(FROM recipe, TO ingredients) with REVERSE_EDGE="recipe_ingredient";
-    ADD DIRECTED EDGE howto_cook(FROM recipe, TO directions, step UINT) with REVERSE_EDGE="rev_preparation";
+    ADD UNDIRECTED EDGE recipe_keyword(FROM recipes, TO keywords);
+    ADD DIRECTED EDGE recipe_ingredient(FROM recipes, TO ingredients) with REVERSE_EDGE="recipe_ingredient";
+    ADD directed EDGE howto_cook(FROM recipes, TO directions, step UINT) with REVERSE_EDGE="rev_preparation";
 }
 RUN SCHEMA_CHANGE JOB create_ddl_recipe
 DROP JOB create_ddl_recipe
