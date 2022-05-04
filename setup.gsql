@@ -7,8 +7,8 @@ CREATE SCHEMA_CHANGE JOB create_ddl_recipe FOR GRAPH RecipeNLG {
     ADD VERTEX keywords(PRIMARY_ID keyword STRING) WITH primary_id_as_attribute="true";
 
     ADD UNDIRECTED EDGE recipe_keyword(FROM recipes, TO keywords);
-    ADD DIRECTED EDGE recipe_ingredient(FROM recipes, TO ingredients) with REVERSE_EDGE="recipe_ingredient";
-    ADD directed EDGE howto_cook(FROM recipes, TO directions, step UINT) with REVERSE_EDGE="rev_preparation";
+    ADD DIRECTED EDGE recipe_ingredient(FROM recipes, TO ingredients) with REVERSE_EDGE="ingredient_recipe";
+    ADD directed EDGE howto_cook(FROM recipes, TO directions, step UINT) with REVERSE_EDGE="rev_howto_cook";
 }
 RUN SCHEMA_CHANGE JOB create_ddl_recipe
 DROP JOB create_ddl_recipe
