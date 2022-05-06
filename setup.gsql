@@ -136,5 +136,3 @@ Try also keywords: onion, cheese, olives
 
         PRINT Start, source, Others;
 }
-
-INSTALL QUERY jaccard_nbor_ss
