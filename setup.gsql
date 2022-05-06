@@ -3,7 +3,7 @@ CREATE GRAPH RecipeNLG()
 CREATE SCHEMA_CHANGE JOB create_ddl_recipe FOR GRAPH RecipeNLG {
     ADD VERTEX recipes(PRIMARY_ID id INT, title STRING, link STRING, source STRING, louvain_comm INT, wgt_pagerank FLOAT, kcore INT) WITH primary_id_as_attribute="true";
     ADD VERTEX directions(PRIMARY_ID instruction STRING) WITH primary_id_as_attribute="true";
-    ADD VERTEX ingredients(PRIMARY_ID ingredient STRING) WITH primary_id_as_attribute="true";
+    ADD VERTEX ingredients(PRIMARY_ID ingredient STRING ) WITH primary_id_as_attribute="true";
     ADD VERTEX keywords(PRIMARY_ID keyword STRING) WITH primary_id_as_attribute="true";
 
     ADD UNDIRECTED EDGE recipe_keyword(FROM recipes, TO keywords);
@@ -15,13 +15,107 @@ DROP JOB create_ddl_recipe
 
 USE GRAPH RecipeNLG
 
+CREATE QUERY a_simple_select(vertex<recipes> recipe) FOR GRAPH RecipeNLG {
+/* This query is just a simple select to return a recipe with directions how to cook and with ingredients */
+  SetAccum <INT> @step;
+  SetAccum <EDGE> @@all_edges;
+
+  start = {recipe};
+
+  rec = SELECT s from start:s;
+  res = SELECT p
+            FROM rec:s -((howto_cook):e)- :p
+            ACCUM p.@step = e.step, @@all_edges += e;
+
+  PRINT  rec, res, @@all_edges;
+}
+
+CREATE QUERY b_all_recipes_for_a_keyword(vertex<keywords> keyword) FOR GRAPH RecipeNLG {
+/* This query returns all recipes for a specific keyword
+ie: onion, parmesan, ground beef
+*/
+  SetAccum <EDGE> @@all_edges;
+
+  start = {keyword};
+
+  rec = SELECT s from start:s;
+  res = SELECT p
+            FROM rec:s -((recipe_keyword):e)- :p
+            LIMIT 10;
+
+  PRINT  rec, res;
+}
+
+CREATE QUERY c_multi_hops(vertex<recipes> recipe) FOR GRAPH RecipeNLG {
+/* This query returns a multi hop pattern for a specific recipe */
+  SetAccum <EDGE> @@all_edges;
+
+  start = {recipe};
+
+  rec = SELECT s from start:s;
+
+  res1 = SELECT p
+            FROM rec:s -((howto_cook):e)- :p
+            ACCUM @@all_edges += e;
+  res2 = SELECT p
+            FROM res1:s -((rev_howto_cook):e)- :p
+            ACCUM @@all_edges += e;
+  res3 = SELECT p
+            FROM res2:s -((howto_cook):e)- :p
+            ACCUM @@all_edges += e;
+
+  PRINT  rec, res1, res2, res3, @@all_edges;
+}
+
+CREATE QUERY d_recipe_counter() FOR GRAPH RecipeNLG {
+/* This query returns the number of directions (howto_cook edge) for all recipes*/
+  MapAccum<STRING, INT> @@steps;
+
+  start = {recipes.*};
+
+  rec = SELECT p
+            FROM start:s -(howto_cook:e)- :p
+            ACCUM @@steps += (s.title -> 1);
+
+  print @@steps;
+}
+
+CREATE QUERY e_recipe_counter_2() FOR GRAPH RecipeNLG {
+/* This query aggregates the number of edges for all recipes by edge type */
+  MapAccum<INT, MapAccum<STRING, INT>> @@details;
+
+  start = {recipes.*};
+
+  rec = SELECT p
+            FROM start:s -(:e)- :p
+            ACCUM @@details += ( s.id ->(e.type -> 1) );
+
+  print @@details as myList;
+}
+
+CREATE QUERY f_recipe_complexity(INT k=10) FOR GRAPH RecipeNLG {
+/* This query finds the recipe with the most cooking directions */
+SumAccum<INT> @steps;
+Start={recipes.*};
+rec = SELECT s
+             FROM Start:s-(howto_cook:e)-:p
+             ACCUM s.@steps +=1
+             ORDER BY s.@steps DESC
+             LIMIT k;
+
+PRINT rec[rec.id,rec.@steps,rec.title] as recipes;
+}
+
 CREATE QUERY jaccard_nbor_ss(vertex source, INT topK) FOR GRAPH RecipeNLG {
 
 /* This query calculates the Jaccard Similarity between a given vertex and every other vertex.
-Jaccard similarity = intersection_size / (size_A + size_B - intersection_size)  */
+Jaccard similarity = intersection_size / (size_A + size_B - intersection_size)
+Try also keywords: onion, cheese, olives
+*/
 
   SumAccum<INT> @intersection_size, @@set_size_A, @set_size_B;
   SumAccum<FLOAT> @similarity;
+
 
         Start (ANY) = {source};
         Start = SELECT s
@@ -43,85 +137,4 @@ Jaccard similarity = intersection_size / (size_A + size_B - intersection_size)  
         PRINT Start, source, Others;
 }
 
-CREATE QUERY tg_pagerank_wt(STRING v_type="recipes", STRING e_type="howto_cook", STRING wt_attr="step",
- FLOAT max_change=0.001, INT max_iter=25, FLOAT damping=0.85, INT top_k = 100,
- BOOL print_accum = TRUE, STRING result_attr="wgt_pagerank", STRING file_path = "",
- BOOL display_edges = FALSE) FOR GRAPH RecipeNLG SYNTAX V1 {
-
-/*
- Compute the pageRank score for each vertex in the GRAPH
- In each iteration, compute a score for each vertex:
-     score = (1-damping) + damping*sum(received scores FROM its neighbors).
- The pageRank algorithm stops when either of the following is true:
- a) it reaches max_iter iterations;
- b) the max score change for any vertex compared to the last iteration <= max_change.
- v_type: vertex types to traverse          print_accum: print JSON output
- e_type: edge types to traverse            result_attr: INT attr to store results to
- wt_attr: attribute for edge weights
- max_iter: max #iterations                 file_path: file to write CSV output to
- top_k: #top scores to output              display_edges: output edges for visualization
- max_change: max allowed change between iterations to achieve convergence
- damping: importance of traversal vs. random teleport
-
- This query supports only taking in a single edge for the time being (8/13/2020).
-*/
-TYPEDEF TUPLE<VERTEX Vertex_ID, FLOAT score> Vertex_Score;
-HeapAccum<Vertex_Score>(top_k, score DESC) @@top_scores_heap;
-MaxAccum<FLOAT> @@max_diff = 9999;    # max score change in an iteration
-SumAccum<FLOAT> @sum_recvd_score = 0; # sum of scores each vertex receives FROM neighbors
-SumAccum<FLOAT> @sum_score = 1;           # initial score for every vertex is 1.
-SetAccum<EDGE> @@edge_set;             # list of all edges, if display is needed
-SumAccum<DOUBLE> @sum_total_wt = 0.0001;
-FILE f (file_path);
-
-Start = {v_type};
- # Calculate the total weight for each vertex
-Start = SELECT s
-        FROM Start:s -(e_type:e) - v_type:t
-        ACCUM s.@sum_total_wt += e.getAttr(wt_attr, "DOUBLE");
-
-# PageRank iterations
-# Start with all vertices of specified type(s)
-WHILE @@max_diff > max_change LIMIT max_iter DO
-    @@max_diff = 0;
-    V = SELECT s
-  FROM Start:s -(e_type:e)- v_type:t
-  ACCUM t.@sum_recvd_score += s.@sum_score * e.getAttr(wt_attr, "DOUBLE")/s.@sum_total_wt
-  POST-ACCUM s.@sum_score = (1.0-damping) + damping * s.@sum_recvd_score,
-       s.@sum_recvd_score = 0,
-       @@max_diff += abs(s.@sum_score - s.@sum_score);
-END;
-
-IF file_path != "" THEN
-    f.println("Vertex_ID", "PageRank");
-END;
-
-V = SELECT s
-    FROM Start:s
-    POST-ACCUM
-        IF result_attr != "" THEN
-            s.setAttr(result_attr, s.@sum_score)
-        END,
-
-  IF file_path != "" THEN
-            f.println(s, s.@sum_score)
-        END,
-
-  IF print_accum THEN
-            @@top_scores_heap += Vertex_Score(s, s.@sum_score)
-        END;
-
-IF print_accum THEN
-    PRINT @@top_scores_heap;
-    IF display_edges THEN
-        PRINT Start[Start.@sum_score];
-  Start = SELECT s
-    FROM Start:s -(e_type:e)- v_type:t
-    ACCUM @@edge_set += e;
-  PRINT @@edge_set;
-    END;
-END;
-}
-
 #INSTALL QUERY jaccard_nbor_ss
-#INSTALL QUERY tg_pagerank_wt
