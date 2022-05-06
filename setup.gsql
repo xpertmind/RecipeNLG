@@ -24,7 +24,7 @@ CREATE QUERY a_simple_select(vertex<recipes> recipe) FOR GRAPH RecipeNLG {
 
   rec = SELECT s from start:s;
   res = SELECT p
-            FROM rec:s -((howto_cook):e)- :p
+            FROM rec:s -((howto_cook|recipe_ingredient):e)- :p
             ACCUM p.@step = e.step, @@all_edges += e;
 
   PRINT  rec, res, @@all_edges;
@@ -137,4 +137,4 @@ Try also keywords: onion, cheese, olives
         PRINT Start, source, Others;
 }
 
-#INSTALL QUERY jaccard_nbor_ss
+INSTALL QUERY jaccard_nbor_ss
